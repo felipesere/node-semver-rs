@@ -1,0 +1,22 @@
+[package]
+name = "node-semver"
+version = "0.1.0"
+authors = ["Felipe Sere <felipesere@gmail.com>", "Kat Marchán <kzm@zkat.tech>"]
+description = "A node-semver compliant semver implementation in Rust."
+repository = "https://github.com/felipesere/node-semver-rs"
+documentation = "https://docs.rs/node-semver"
+license = "Apache-2.0"
+readme = "README.md"
+edition = "2018"
+
+[dependencies]
+bytecount = "0.6.0"
+miette = "2.0.0"
+nom = "6.0.0"
+serde = "1.0.126"
+thiserror = "1.0.29"
+
+[dev-dependencies]
+pretty_assertions = "0.6.1"
+serde_derive = "1.0.115"
+serde_json = "1.0.57"
