@@ -169,7 +169,7 @@ enum Operation {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum Predicate {
+enum Predicate {
     Excluding(Version), // < and >
     Including(Version), // <= and >=
     Unbounded,          // *
