@@ -22,7 +22,7 @@ use nom::multi::separated_list1;
 use nom::sequence::{preceded, tuple};
 use nom::{Err, IResult};
 
-pub use range::Range;
+pub use range::*;
 
 pub mod range;
 
