@@ -1,5 +1,12 @@
 # `node-semver` Release Changelog
 
+<a name="1.0.1"></a>
+## 1.0.1 (2021-09-24)
+
+### Bug Fixes
+
+* **api:** stop exporting anything but Range from range mod ([4eeb862d](https://github.com/felipesere/node-semver-rs/commit/4eeb862dd2d07901826c3e6d47b8c9ffe2cf90d3))
+
 <a name="1.0.0"></a>
 ## 1.0.0 (2021-09-24)
 
