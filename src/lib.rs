@@ -261,6 +261,11 @@ pub struct Version {
 }
 
 impl Version {
+    /// True if this [Version] satisfies the given [Range].
+    pub fn satisfies(&self, range: &Range) -> bool {
+        range.satisfies(self)
+    }
+
     /// True is this [Version] has a prerelease component.
     pub fn is_prerelease(&self) -> bool {
         !self.pre_release.is_empty()
