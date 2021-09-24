@@ -1,8 +1,10 @@
+#![doc = include_str!("../README.md")]
+
 use std::cmp::{self, Ordering};
 use std::fmt;
 use std::num::ParseIntError;
 
-use miette::Diagnostic;
+use miette::{Diagnostic, SourceSpan};
 use serde::{
     de::{self, Deserialize, Deserializer, Visitor},
     ser::{Serialize, Serializer},
@@ -39,17 +41,40 @@ Semver version or range parsing error wrapper.
 This wrapper is used to hold some parsing-related metadata, as well as
 a more specific [SemverErrorKind].
 */
-#[derive(Debug, Clone, Error, Eq, PartialEq, Diagnostic)]
-#[error("Error parsing semver string.")]
-#[diagnostic(code(semver::no_parse))]
+#[derive(Debug, Clone, Error, Eq, PartialEq)]
+#[error("Error parsing semver string. {kind}")]
 pub struct SemverError {
     input: String,
-    #[snippet(input)]
-    snippet: (usize, usize),
-    #[highlight(snippet, label("parse error here"))]
-    offset: (usize, usize),
-    #[source]
+    span: SourceSpan,
     kind: SemverErrorKind,
+}
+
+impl Diagnostic for SemverError {
+    fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+        self.kind().code()
+    }
+
+    fn severity(&self) -> Option<miette::Severity> {
+        self.kind().severity()
+    }
+
+    fn help<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+        self.kind().help()
+    }
+
+    fn url<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
+        self.kind().url()
+    }
+
+    fn source_code(&self) -> Option<&dyn miette::SourceCode> {
+        Some(&self.input)
+    }
+
+    fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
+        Some(Box::new(std::iter::once(
+            miette::LabeledSpan::new_with_span(Some("here".into()), self.span().clone()),
+        )))
+    }
 }
 
 impl SemverError {
@@ -58,9 +83,14 @@ impl SemverError {
         &self.input
     }
 
+    /// Returns the SourceSpan of the error.
+    pub fn span(&self) -> &SourceSpan {
+        &self.span
+    }
+
     /// Returns the (0-based) byte offset where the parsing error happened.
     pub fn offset(&self) -> usize {
-        self.offset.0
+        self.span.offset()
     }
 
     /// Returns the more specific [SemverErrorKind] for this error.
@@ -75,7 +105,7 @@ impl SemverError {
     /// happened.
     pub fn location(&self) -> (usize, usize) {
         // Taken partially from nom.
-        let prefix = &self.input.as_bytes()[..self.offset.0];
+        let prefix = &self.input.as_bytes()[..self.offset()];
 
         // Count the number of newlines in the first `offset` bytes of input
         let line_number = bytecount::count(prefix, b'\n');
@@ -86,7 +116,7 @@ impl SemverError {
             .iter()
             .rev()
             .position(|&b| b == b'\n')
-            .map(|pos| self.offset.0 - pos)
+            .map(|pos| self.offset() - pos)
             .unwrap_or(0);
 
         // Find the full line after that newline
@@ -97,7 +127,7 @@ impl SemverError {
             .trim_end();
 
         // The (0-indexed) column number is the offset of our substring into that line
-        let column_number = self.input[self.offset.0..].as_ptr() as usize - line.as_ptr() as usize;
+        let column_number = self.input[self.offset()..].as_ptr() as usize - line.as_ptr() as usize;
 
         (line_number, column_number)
     }
@@ -106,19 +136,57 @@ impl SemverError {
 /**
 The specific kind of error that occurred. Usually wrapped in a [SemverError].
 */
-#[derive(Debug, Clone, Error, Eq, PartialEq)]
+#[derive(Debug, Clone, Error, Eq, PartialEq, Diagnostic)]
 pub enum SemverErrorKind {
+    /**
+    Semver strings overall can't be longer than [MAX_LENGTH]. This is a
+    restriction coming from the JavaScript `node-semver`.
+    */
     #[error("Semver string can't be longer than {} characters.", MAX_LENGTH)]
+    #[diagnostic(code(node_semver::too_long), url(docsrs))]
     MaxLengthError,
+
+    /**
+    Input to `node-semver` must be "complete". That is, a version must be
+    composed of major, minor, and patch segments, with optional prerelease
+    and build metadata. If you're looking for alternative syntaxes, like `1.2`,
+    that are meant for defining semver ranges, use [Range] instead.
+    */
     #[error("Incomplete input to semver parser.")]
+    #[diagnostic(code(node_semver::incomplete_input), url(docsrs))]
     IncompleteInput,
+
+    /**
+    Components of a semver string (major, minor, patch, integer sections of
+    build and prerelease) must all be valid, parseable integers. This error
+    occurs when Rust's own integer parsing failed.
+    */
     #[error("Failed to parse an integer component of a semver string: {0}")]
+    #[diagnostic(code(node_semver::parse_int_error), url(docsrs))]
     ParseIntError(ParseIntError),
+
+    /**
+    `node-semver` inherits the JavaScript implementation's limitation on
+    limiting integer component sizes to [MAX_SAFE_INTEGER].
+    */
     #[error("Integer component of semver string is larger than JavaScript's Number.MAX_SAFE_INTEGER: {0}")]
+    #[diagnostic(code(node_semver::integer_too_large), url(docsrs))]
     MaxIntError(u64),
+
+    /**
+    This is a generic error that a certain component of the semver string
+    failed to parse.
+    */
     #[error("Failed to parse {0} component of semver string.")]
+    #[diagnostic(code(node_semver::parse_component_error), url(docsrs))]
     Context(&'static str),
+
+    /**
+    This error is mostly nondescript. Feel free to file an issue if you run
+    into it.
+    */
     #[error("An unspecified error occurred.")]
+    #[diagnostic(code(node_semver::other), url(docsrs))]
     Other,
 }
 
@@ -205,8 +273,7 @@ impl Version {
         if input.len() > MAX_LENGTH {
             return Err(SemverError {
                 input: input.into(),
-                snippet: (0, input.len()),
-                offset: (input.len() - 1, 0),
+                span: (input.len() - 1, 0).into(),
                 kind: SemverErrorKind::MaxLengthError,
             });
         }
@@ -216,8 +283,7 @@ impl Version {
             Err(err) => Err(match err {
                 Err::Error(e) | Err::Failure(e) => SemverError {
                     input: input.into(),
-                    snippet: (0, input.len()),
-                    offset: (e.input.as_ptr() as usize - input.as_ptr() as usize, 0),
+                    span: (e.input.as_ptr() as usize - input.as_ptr() as usize, 0).into(),
                     kind: if let Some(kind) = e.kind {
                         kind
                     } else if let Some(ctx) = e.context {
@@ -228,8 +294,7 @@ impl Version {
                 },
                 Err::Incomplete(_) => SemverError {
                     input: input.into(),
-                    snippet: (0, input.len()),
-                    offset: (input.len() - 1, 0),
+                    span: (input.len() - 1, 0).into(),
                     kind: SemverErrorKind::IncompleteInput,
                 },
             }),

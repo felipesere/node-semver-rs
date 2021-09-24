@@ -314,8 +314,7 @@ impl Range {
             Err(err) => Err(match err {
                 Err::Error(e) | Err::Failure(e) => SemverError {
                     input: input.into(),
-                    snippet: (0, input.len()),
-                    offset: (e.input.as_ptr() as usize - input.as_ptr() as usize, 0),
+                    span: (e.input.as_ptr() as usize - input.as_ptr() as usize, 0).into(),
                     kind: if let Some(kind) = e.kind {
                         kind
                     } else if let Some(ctx) = e.context {
@@ -326,8 +325,7 @@ impl Range {
                 },
                 Err::Incomplete(_) => SemverError {
                     input: input.into(),
-                    snippet: (0, input.len()),
-                    offset: (input.len() - 1, 0),
+                    span: (input.len() - 1, 0).into(),
                     kind: SemverErrorKind::IncompleteInput,
                 },
             }),
