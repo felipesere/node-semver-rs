@@ -42,7 +42,7 @@ This wrapper is used to hold some parsing-related metadata, as well as
 a more specific [SemverErrorKind].
 */
 #[derive(Debug, Clone, Error, Eq, PartialEq)]
-#[error("Error parsing semver string. {kind}")]
+#[error("{kind}")]
 pub struct SemverError {
     input: String,
     span: SourceSpan,
@@ -177,7 +177,7 @@ pub enum SemverErrorKind {
     This is a generic error that a certain component of the semver string
     failed to parse.
     */
-    #[error("Failed to parse {0} component of semver string.")]
+    #[error("Failed to parse {0}.")]
     #[diagnostic(code(node_semver::parse_component_error), url(docsrs))]
     Context(&'static str),
 
@@ -798,7 +798,7 @@ mod tests {
     fn individual_version_component_has_an_upper_bound() {
         let out_of_range = MAX_SAFE_INTEGER + 1;
         let v = Version::parse(format!("1.2.{}", out_of_range));
-        assert_eq!(v.err().expect("Parse should have failed.").to_string(), "Error parsing semver string. Integer component of semver string is larger than JavaScript's Number.MAX_SAFE_INTEGER: 900719925474100");
+        assert_eq!(v.err().expect("Parse should have failed.").to_string(), "Integer component of semver string is larger than JavaScript's Number.MAX_SAFE_INTEGER: 900719925474100");
     }
 
     #[test]
@@ -809,12 +809,44 @@ mod tests {
 
         assert_eq!(
             v.err().expect("Parse should have failed").to_string(),
-            "Error parsing semver string. Semver string can't be longer than 256 characters."
+            "Semver string can't be longer than 256 characters."
         );
 
         let ok_version = version_string[0..255].to_string();
         let v = Version::parse(ok_version);
         assert!(v.is_ok());
+    }
+
+    #[test]
+    fn version_prefixed_with_v() {
+        // TODO: This is part of strict parsing for node-semver!
+        let v = Version::parse("v1.2.3").unwrap();
+        assert_eq!(
+            v,
+            Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                pre_release: vec![],
+                build: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn version_prefixed_with_v_space() {
+        // TODO: Loose parsing supports this, so
+        let v = Version::parse("v 1.2.3").unwrap();
+        assert_eq!(
+            v,
+            Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                pre_release: vec![],
+                build: vec![],
+            }
+        );
     }
 
     #[derive(Serialize, Deserialize, Eq, PartialEq)]
