@@ -9,7 +9,7 @@ use serde::{
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{anychar, space0, space1};
-use nom::combinator::{all_consuming, map, map_res, opt};
+use nom::combinator::{all_consuming, eof, map, map_res, opt};
 use nom::error::context;
 use nom::multi::{many_till, separated_list1};
 use nom::sequence::{delimited, preceded, tuple};
@@ -567,7 +567,7 @@ fn simple(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>
 }
 
 fn garbage(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
-    map(many_till(anychar, alt((space0, tag("||")))), |_| None)(input)
+    map(many_till(anychar, alt((space1, tag("||"), eof))), |_| None)(input)
 }
 
 // primitive  ::= ( '<' | '>' | '>=' | '<=' | '=' ) partial
@@ -1515,6 +1515,8 @@ mod tests {
         single_sided_lower_bound_with_pre_release => [">1.0.0-alpha", ">1.0.0-alpha"],
         space_separated1 => [">=1.2.3 <4.5.6", ">=1.2.3 <4.5.6"],
         garbage1 => ["1.2.3 foo", "1.2.3"],
+        garbage2 => ["foo 1.2.3", "1.2.3"],
+        garbage3 => ["~1.y 1.2.3", "1.2.3"],
         loose1 => [">01.02.03", ">1.2.3"],
         loose2 => ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0"],
         caret_weird => ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0"],
