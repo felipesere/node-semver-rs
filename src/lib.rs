@@ -12,7 +12,6 @@ use serde::{
 use thiserror::Error;
 
 use nom::branch::alt;
-use nom::bytes::complete::take_while;
 use nom::bytes::complete::{tag, take_while1};
 use nom::character::complete::{digit1, space0};
 use nom::character::is_alphanumeric;

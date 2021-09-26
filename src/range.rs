@@ -536,14 +536,28 @@ fn bound_sets(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str
     })(input)
 }
 fn logical_or(input: &str) -> IResult<&str, (), SemverParseError<&str>> {
-    map(delimited(opt(space1), tag("||"), opt(space1)), |_| ())(input)
+    map(delimited(space0, tag("||"), space0), |_| ())(input)
 }
 
 fn range(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
     // TODO: loose parsing means that `1.2.3 foo` translates to `1.2.3`, so we
     // need to do some stuff here to filter out unwanted BoundSets.
     map(separated_list1(space1, simple), |bs| {
-        bs.into_iter().flatten().collect()
+        bs.into_iter()
+            .flatten()
+            .fold(Vec::new(), |mut acc: Vec<BoundSet>, bs| {
+                if let Some(last) = acc.pop() {
+                    if let Some(bound) = last.intersect(&bs) {
+                        acc.push(bound);
+                    } else {
+                        acc.push(last);
+                        acc.push(bs);
+                    }
+                } else {
+                    acc.push(bs)
+                }
+                acc
+            })
     })(input)
 }
 
@@ -1499,15 +1513,15 @@ mod tests {
         beta_4        => ["^1.2.3-beta.4", ">=1.2.3-beta.4 <2.0.0-0"],
         pre_release_on_both => ["1.0.0-alpha - 2.0.0-beta", ">=1.0.0-alpha <=2.0.0-beta"],
         single_sided_lower_bound_with_pre_release => [">1.0.0-alpha", ">1.0.0-alpha"],
-        // space_separated => ["1.2.3 4.5.6", "1.2.3 4.5.6"],
+        space_separated1 => [">=1.2.3 <4.5.6", ">=1.2.3 <4.5.6"],
         // garbage1 => ["1.2.3 foo", "1.2.3"],
         loose1 => [">01.02.03", ">1.2.3"],
         loose2 => ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0"],
+        caret_weird => ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0"],
     ];
 
     /*
-    // From here onwards we might have to deal with pre-release tags to?
-    ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0 >=1.0.0"],
+    // And these weirdos that I don't know what to do with.
     [">X", "<0.0.0-0"],
     ["<X", "<0.0.0-0"],
     ["<x <* || >* 2.x", "<0.0.0-0"],
