@@ -12,8 +12,8 @@ use serde::{
 use thiserror::Error;
 
 use nom::branch::alt;
-use nom::bytes::complete::tag;
 use nom::bytes::complete::take_while;
+use nom::bytes::complete::{tag, take_while1};
 use nom::character::complete::{digit1, space0};
 use nom::character::is_alphanumeric;
 use nom::combinator::{all_consuming, map, map_res, opt, recognize};
@@ -539,7 +539,7 @@ fn build(input: &str) -> IResult<&str, Vec<Identifier>, SemverParseError<&str>> 
 fn pre_release(input: &str) -> IResult<&str, Vec<Identifier>, SemverParseError<&str>> {
     context(
         "pre_release version",
-        preceded(tag("-"), separated_list1(tag("."), identifier)),
+        preceded(opt(tag("-")), separated_list1(tag("."), identifier)),
     )(input)
 }
 
@@ -547,7 +547,7 @@ fn identifier(input: &str) -> IResult<&str, Identifier, SemverParseError<&str>> 
     context(
         "identifier",
         map(
-            take_while(|x: char| is_alphanumeric(x as u8) || x == '-'),
+            take_while1(|x: char| is_alphanumeric(x as u8) || x == '-'),
             |s: &str| {
                 str::parse::<u64>(s)
                     .map(Identifier::Numeric)

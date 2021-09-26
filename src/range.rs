@@ -1,5 +1,5 @@
 use std::cmp::{Ord, Ordering, PartialOrd};
-use std::{fmt, iter};
+use std::fmt;
 
 use serde::{
     de::{self, Deserialize, Deserializer, Visitor},
@@ -11,7 +11,7 @@ use nom::bytes::complete::tag;
 use nom::character::complete::{anychar, space0, space1};
 use nom::combinator::{all_consuming, map, map_res, opt};
 use nom::error::context;
-use nom::multi::{many_till, separated_list0, separated_list1};
+use nom::multi::{many_till, separated_list1};
 use nom::sequence::{delimited, preceded, tuple};
 use nom::{Err, IResult};
 
@@ -539,73 +539,7 @@ fn logical_or(input: &str) -> IResult<&str, (), SemverParseError<&str>> {
     map(delimited(opt(space1), tag("||"), opt(space1)), |_| ())(input)
 }
 
-// range ::= hyphen | simple ( ' ' simple ) * | ''
 fn range(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
-    // TODO: What's up with the `''` case???
-    alt((map(hyphen, |h| iter::once(h).flatten().collect()), simples))(input)
-}
-
-// hyphen ::= ' - ' partial /* loose */ | partial ' - ' partial
-fn hyphen(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
-    context("hyphenated version range (ex: 1.2 - 2)", |input| {
-        let (input, lower) = opt(partial_version)(input)?;
-        let (input, _) = space1(input)?;
-        let (input, _) = tag("-")(input)?;
-        let (input, _) = space1(input)?;
-        let (input, upper) = partial_version(input)?;
-        let upper = match upper {
-            Partial {
-                major: None,
-                minor: None,
-                patch: None,
-                ..
-            } => Predicate::Excluding(Version {
-                major: 0,
-                minor: 0,
-                patch: 0,
-                pre_release: vec![Identifier::Numeric(0)],
-                build: vec![],
-            }),
-            Partial {
-                major: Some(major),
-                minor: None,
-                patch: None,
-                ..
-            } => Predicate::Excluding(Version {
-                major: major + 1,
-                minor: 0,
-                patch: 0,
-                pre_release: vec![Identifier::Numeric(0)],
-                build: vec![],
-            }),
-            Partial {
-                major: Some(major),
-                minor: Some(minor),
-                patch: None,
-                ..
-            } => Predicate::Excluding(Version {
-                major,
-                minor: minor + 1,
-                patch: 0,
-                pre_release: vec![Identifier::Numeric(0)],
-                build: vec![],
-            }),
-            partial => Predicate::Including(partial.into()),
-        };
-        let bounds = if let Some(lower) = lower {
-            BoundSet::new(
-                Bound::Lower(Predicate::Including(lower.into())),
-                Bound::Upper(upper),
-            )
-        } else {
-            BoundSet::at_most(upper)
-        };
-        Ok((input, bounds))
-    })(input)
-}
-
-// simples ::= simple ( ' ' simple ) *
-fn simples(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
     // TODO: loose parsing means that `1.2.3 foo` translates to `1.2.3`, so we
     // need to do some stuff here to filter out unwanted BoundSets.
     map(separated_list1(space1, simple), |bs| {
@@ -615,14 +549,11 @@ fn simples(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> 
 
 // simple ::= primitive | partial | tilde | caret | garbage
 fn simple(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
-    // TODO: garbage needs to be parsed but thrown out in loose
-    // mode.
-    alt((primitive, partial, tilde, caret))(input)
+    alt((hyphen, primitive, partial, tilde, caret, garbage))(input)
 }
 
-// TODO: This is wrong
 fn garbage(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
-    map(many_till(anychar, space1), |_| None)(input)
+    map(many_till(anychar, alt((space1, tag("||")))), |_| None)(input)
 }
 
 // primitive  ::= ( '<' | '>' | '>=' | '<=' | '=' ) partial
@@ -841,10 +772,17 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                     major: Some(major),
                     minor: Some(minor),
                     patch: Some(patch),
+                    pre_release,
                     ..
                 },
             ) => BoundSet::new(
-                Bound::Lower(Predicate::Including((major, minor, patch).into())),
+                Bound::Lower(Predicate::Including(Version {
+                    major,
+                    minor,
+                    patch,
+                    pre_release,
+                    build: vec![],
+                })),
                 Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
             ),
             (
@@ -853,10 +791,17 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                     major: Some(major),
                     minor: Some(minor),
                     patch: Some(patch),
+                    pre_release,
                     ..
                 },
             ) => BoundSet::new(
-                Bound::Lower(Predicate::Including((major, minor, patch).into())),
+                Bound::Lower(Predicate::Including(Version {
+                    major,
+                    minor,
+                    patch,
+                    pre_release,
+                    build: vec![],
+                })),
                 Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
             ),
             (
@@ -952,6 +897,65 @@ fn caret(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
             },
         ),
     )(input)
+}
+
+// hyphen ::= ' - ' partial /* loose */ | partial ' - ' partial
+fn hyphen(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
+    context("hyphenated version range (ex: 1.2 - 2)", |input| {
+        let (input, lower) = opt(partial_version)(input)?;
+        let (input, _) = space1(input)?;
+        let (input, _) = tag("-")(input)?;
+        let (input, _) = space1(input)?;
+        let (input, upper) = partial_version(input)?;
+        let upper = match upper {
+            Partial {
+                major: None,
+                minor: None,
+                patch: None,
+                ..
+            } => Predicate::Excluding(Version {
+                major: 0,
+                minor: 0,
+                patch: 0,
+                pre_release: vec![Identifier::Numeric(0)],
+                build: vec![],
+            }),
+            Partial {
+                major: Some(major),
+                minor: None,
+                patch: None,
+                ..
+            } => Predicate::Excluding(Version {
+                major: major + 1,
+                minor: 0,
+                patch: 0,
+                pre_release: vec![Identifier::Numeric(0)],
+                build: vec![],
+            }),
+            Partial {
+                major: Some(major),
+                minor: Some(minor),
+                patch: None,
+                ..
+            } => Predicate::Excluding(Version {
+                major,
+                minor: minor + 1,
+                patch: 0,
+                pre_release: vec![Identifier::Numeric(0)],
+                build: vec![],
+            }),
+            partial => Predicate::Including(partial.into()),
+        };
+        let bounds = if let Some(lower) = lower {
+            BoundSet::new(
+                Bound::Lower(Predicate::Including(lower.into())),
+                Bound::Upper(upper),
+            )
+        } else {
+            BoundSet::at_most(upper)
+        };
+        Ok((input, bounds))
+    })(input)
 }
 
 macro_rules! create_tests_for {
@@ -1491,17 +1495,18 @@ mod tests {
         whitespace_12 => ["~> 1", ">=1.0.0 <2.0.0-0"],
         whitespace_13 => ["~ 1.0", ">=1.0.0 <1.1.0-0"],
         beta          => ["^0.0.1-beta", ">=0.0.1-beta <0.0.2-0"],
+        beta_tilde => ["~1.2.3-beta", ">=1.2.3-beta <1.3.0-0"],
         beta_4        => ["^1.2.3-beta.4", ">=1.2.3-beta.4 <2.0.0-0"],
         pre_release_on_both => ["1.0.0-alpha - 2.0.0-beta", ">=1.0.0-alpha <=2.0.0-beta"],
         single_sided_lower_bound_with_pre_release => [">1.0.0-alpha", ">1.0.0-alpha"],
+        // space_separated => ["1.2.3 4.5.6", "1.2.3 4.5.6"],
+        // garbage1 => ["1.2.3 foo", "1.2.3"],
+        loose1 => [">01.02.03", ">1.2.3"],
+        loose2 => ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0"],
     ];
 
     /*
     // From here onwards we might have to deal with pre-release tags to?
-    [">01.02.03", ">1.2.3", true],
-    [">01.02.03", null],
-    ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0", { loose: true }],
-    ["~1.2.3beta", null],
     ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0 >=1.0.0"],
     [">X", "<0.0.0-0"],
     ["<X", "<0.0.0-0"],
