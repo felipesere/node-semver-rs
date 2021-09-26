@@ -1,5 +1,5 @@
 use std::cmp::{Ord, Ordering, PartialOrd};
-use std::fmt;
+use std::{fmt, iter};
 
 use serde::{
     de::{self, Deserialize, Deserializer, Visitor},
@@ -11,7 +11,7 @@ use nom::bytes::complete::tag;
 use nom::character::complete::{anychar, space0, space1};
 use nom::combinator::{all_consuming, map, map_res, opt};
 use nom::error::context;
-use nom::multi::{many_till, separated_list1};
+use nom::multi::{many_till, separated_list0, separated_list1};
 use nom::sequence::{delimited, preceded, tuple};
 use nom::{Err, IResult};
 
@@ -531,19 +531,18 @@ fn range_set(input: &str) -> IResult<&str, Range, SemverParseError<&str>> {
 
 // logical-or ::= ( ' ' ) * '||' ( ' ' ) *
 fn bound_sets(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
-    map(
-        separated_list1(delimited(space0, tag("||"), space0), range),
-        |sets| sets.into_iter().flatten().collect(),
-    )(input)
+    map(separated_list1(logical_or, range), |sets| {
+        sets.into_iter().flatten().collect()
+    })(input)
+}
+fn logical_or(input: &str) -> IResult<&str, (), SemverParseError<&str>> {
+    map(delimited(opt(space1), tag("||"), opt(space1)), |_| ())(input)
 }
 
 // range ::= hyphen | simple ( ' ' simple ) * | ''
 fn range(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
     // TODO: What's up with the `''` case???
-    alt((
-        map(hyphen, |h| std::iter::once(h).flatten().collect()),
-        simples,
-    ))(input)
+    alt((map(hyphen, |h| iter::once(h).flatten().collect()), simples))(input)
 }
 
 // hyphen ::= ' - ' partial /* loose */ | partial ' - ' partial
@@ -618,10 +617,10 @@ fn simples(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> 
 fn simple(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     // TODO: garbage needs to be parsed but thrown out in loose
     // mode.
-    alt((primitive, partial, tilde, caret, garbage))(input)
+    alt((primitive, partial, tilde, caret))(input)
 }
 
-// TODO: I think this is right?
+// TODO: This is wrong
 fn garbage(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     map(many_till(anychar, space1), |_| None)(input)
 }
@@ -720,10 +719,12 @@ fn partial(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str
     context(
         "plain version range (ex: 1.2)",
         map(partial_version, |partial| match partial {
+            Partial { major: None, .. } => {
+                BoundSet::at_least(Predicate::Including((0, 0, 0).into()))
+            }
             Partial {
                 major: Some(major),
                 minor: None,
-                patch: None,
                 ..
             } => BoundSet::new(
                 Bound::Lower(Predicate::Including((major, 0, 0).into())),
@@ -1011,7 +1012,7 @@ create_tests_for! {
 
     eq_123_or_gt_400  => "1.2.3 || >4", {
         allows => [ "1.2.3", ">4", "5.x", "5.2.x", ">=8.2.1", "2.0 || 5.6.7"],
-        denies => ["<2", "1 - 7", "1.9.4 || 2-3"],
+        denies => ["<2", "1 - 7", "1.9.4 || 2 - 3"],
     },
 
     between_two_and_eight => "2 - 8", {
@@ -1056,7 +1057,7 @@ create_tests_for! {
 
     eq_123_or_gt_400  => "1.2.3 || >4", {
         allows => [ "1.2.3", ">3", "5.x", "5.2.x", ">=8.2.1", "2 - 7", "2.0 || 5.6.7"],
-        denies => [ "1.9.4 || 2-3"],
+        denies => [ "1.9.4 || 2 - 3"],
     },
 }
 
@@ -1171,7 +1172,7 @@ mod intersection {
 
     #[test]
     fn multiple() {
-        let base_range = v("<1 || 3-4");
+        let base_range = v("<1 || 3 - 4");
 
         let samples = vec![("0.5 - 3.5.0", Some(">=0.5.0 <1.0.0||>=3.0.0 <=3.5.0"))];
 
@@ -1305,9 +1306,9 @@ mod difference {
 
     #[test]
     fn multiple() {
-        let base_range = v("<1 || 3-4");
+        let base_range = v("<1 || 3 - 4");
 
-        let samples = vec![("0.5 - 3.5.0", Some("<0.5.0||>3.5.0 <4.0.0-0"))];
+        let samples = vec![("0.5 - 3.5.0", Some("<0.5.0||>3.5.0 <5.0.0-0"))];
 
         assert_ranges_match(base_range, samples);
     }
