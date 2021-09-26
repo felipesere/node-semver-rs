@@ -556,7 +556,19 @@ fn hyphen(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>
         let (input, upper) = partial_version(input)?;
         let upper = match upper {
             Partial {
-                major,
+                major: None,
+                minor: None,
+                patch: None,
+                ..
+            } => Predicate::Excluding(Version {
+                major: 0,
+                minor: 0,
+                patch: 0,
+                pre_release: vec![Identifier::Numeric(0)],
+                build: vec![],
+            }),
+            Partial {
+                major: Some(major),
                 minor: None,
                 patch: None,
                 ..
@@ -568,7 +580,7 @@ fn hyphen(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>
                 build: vec![],
             }),
             Partial {
-                major,
+                major: Some(major),
                 minor: Some(minor),
                 patch: None,
                 ..
@@ -628,7 +640,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                 (
                     GreaterThan,
                     Partial {
-                        major,
+                        major: Some(major),
                         minor: Some(minor),
                         patch: None,
                         ..
@@ -637,7 +649,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                 (
                     GreaterThan,
                     Partial {
-                        major,
+                        major: Some(major),
                         minor: None,
                         patch: None,
                         ..
@@ -647,7 +659,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                 (
                     LessThan,
                     Partial {
-                        major,
+                        major: Some(major),
                         minor: Some(minor),
                         patch: None,
                         ..
@@ -662,7 +674,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                         ..
                     },
                 ) => BoundSet::at_most(Predicate::Excluding(
-                    (major, minor.unwrap_or(0), patch.unwrap_or(0)).into(),
+                    (major.unwrap_or(0), minor.unwrap_or(0), patch.unwrap_or(0)).into(),
                 )),
                 (
                     LessThanEquals,
@@ -673,7 +685,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                         ..
                     },
                 ) => BoundSet::at_most(Predicate::Including(
-                    (major, minor.unwrap_or(0), 0, 0).into(),
+                    (major.unwrap_or(0), minor.unwrap_or(0), 0, 0).into(),
                 )),
                 (LessThanEquals, partial) => {
                     BoundSet::at_most(Predicate::Including(partial.into()))
@@ -686,7 +698,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                         patch: Some(patch),
                         ..
                     },
-                ) => BoundSet::exact((major, minor, patch).into()),
+                ) => BoundSet::exact((major.unwrap_or(0), minor, patch).into()),
                 _ => unreachable!("Odd parsed version: {:?}", parsed),
             },
         ),
@@ -709,7 +721,7 @@ fn partial(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str
         "plain version range (ex: 1.2)",
         map(partial_version, |partial| match partial {
             Partial {
-                major,
+                major: Some(major),
                 minor: None,
                 patch: None,
                 ..
@@ -724,7 +736,7 @@ fn partial(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str
                 })),
             ),
             Partial {
-                major,
+                major: Some(major),
                 minor: Some(minor),
                 patch: None,
                 ..
@@ -745,7 +757,7 @@ fn partial(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str
 
 #[derive(Debug, Clone)]
 struct Partial {
-    major: u64,
+    major: Option<u64>,
     minor: Option<u64>,
     patch: Option<u64>,
     pre_release: Vec<Identifier>,
@@ -755,7 +767,7 @@ struct Partial {
 impl From<Partial> for Version {
     fn from(partial: Partial) -> Self {
         Version {
-            major: partial.major,
+            major: partial.major.unwrap_or(0),
             minor: partial.minor.unwrap_or(0),
             patch: partial.patch.unwrap_or(0),
             pre_release: partial.pre_release,
@@ -782,7 +794,7 @@ fn partial_version(input: &str) -> IResult<&str, Partial, SemverParseError<&str>
     Ok((
         input,
         Partial {
-            major: major.unwrap_or(0),
+            major,
             minor: minor.flatten(),
             patch: patch.flatten(),
             pre_release: pre,
@@ -813,7 +825,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
             (
                 Some(_gt),
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: None,
                     patch: None,
                     ..
@@ -825,7 +837,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
             (
                 Some(_gt),
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: Some(minor),
                     patch: Some(patch),
                     ..
@@ -837,7 +849,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
             (
                 None,
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: Some(minor),
                     patch: Some(patch),
                     ..
@@ -849,7 +861,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
             (
                 None,
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: Some(minor),
                     patch: None,
                     ..
@@ -861,7 +873,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
             (
                 None,
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: None,
                     patch: None,
                     ..
@@ -882,13 +894,13 @@ fn caret(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
             preceded(tuple((tag("^"), space0)), partial_version),
             |parsed| match parsed {
                 Partial {
-                    major: 0,
+                    major: Some(0),
                     minor: None,
                     patch: None,
                     ..
                 } => BoundSet::at_most(Predicate::Excluding((1, 0, 0, 0).into())),
                 Partial {
-                    major: 0,
+                    major: Some(0),
                     minor: Some(minor),
                     patch: None,
                     ..
@@ -898,7 +910,7 @@ fn caret(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                 ),
                 // TODO: can be compressed?
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: None,
                     patch: None,
                     ..
@@ -907,7 +919,7 @@ fn caret(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                     Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
                 ),
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: Some(minor),
                     patch: None,
                     ..
@@ -916,7 +928,7 @@ fn caret(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                     Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
                 ),
                 Partial {
-                    major,
+                    major: Some(major),
                     minor: Some(minor),
                     patch: Some(patch),
                     pre_release,
