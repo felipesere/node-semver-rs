@@ -567,7 +567,7 @@ fn simple(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>
 }
 
 fn garbage(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
-    map(many_till(anychar, alt((space1, tag("||")))), |_| None)(input)
+    map(many_till(anychar, alt((space0, tag("||")))), |_| None)(input)
 }
 
 // primitive  ::= ( '<' | '>' | '>=' | '<=' | '=' ) partial
@@ -1514,7 +1514,7 @@ mod tests {
         pre_release_on_both => ["1.0.0-alpha - 2.0.0-beta", ">=1.0.0-alpha <=2.0.0-beta"],
         single_sided_lower_bound_with_pre_release => [">1.0.0-alpha", ">1.0.0-alpha"],
         space_separated1 => [">=1.2.3 <4.5.6", ">=1.2.3 <4.5.6"],
-        // garbage1 => ["1.2.3 foo", "1.2.3"],
+        garbage1 => ["1.2.3 foo", "1.2.3"],
         loose1 => [">01.02.03", ">1.2.3"],
         loose2 => ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0"],
         caret_weird => ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0"],
