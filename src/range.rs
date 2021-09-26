@@ -11,7 +11,7 @@ use nom::bytes::complete::tag;
 use nom::character::complete::{anychar, space0, space1};
 use nom::combinator::{all_consuming, eof, map, map_res, opt};
 use nom::error::context;
-use nom::multi::{many_till, separated_list1};
+use nom::multi::{many_till, separated_list0};
 use nom::sequence::{delimited, preceded, tuple};
 use nom::{Err, IResult};
 
@@ -531,7 +531,7 @@ fn range_set(input: &str) -> IResult<&str, Range, SemverParseError<&str>> {
 
 // logical-or ::= ( ' ' ) * '||' ( ' ' ) *
 fn bound_sets(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
-    map(separated_list1(logical_or, range), |sets| {
+    map(separated_list0(logical_or, range), |sets| {
         sets.into_iter().flatten().collect()
     })(input)
 }
@@ -542,7 +542,7 @@ fn logical_or(input: &str) -> IResult<&str, (), SemverParseError<&str>> {
 fn range(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
     // TODO: loose parsing means that `1.2.3 foo` translates to `1.2.3`, so we
     // need to do some stuff here to filter out unwanted BoundSets.
-    map(separated_list1(space1, simple), |bs| {
+    map(separated_list0(space1, simple), |bs| {
         bs.into_iter()
             .flatten()
             .fold(Vec::new(), |mut acc: Vec<BoundSet>, bs| {
