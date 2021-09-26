@@ -7,9 +7,9 @@ use serde::{
 };
 
 use nom::branch::alt;
-use nom::bytes::complete::{tag, take_while, take_while1};
+use nom::bytes::complete::tag;
 use nom::character::complete::{anychar, space0, space1};
-use nom::combinator::{all_consuming, complete, cut, map, map_opt, opt};
+use nom::combinator::{all_consuming, map, map_res, opt};
 use nom::error::context;
 use nom::multi::{many_till, separated_list1};
 use nom::sequence::{delimited, preceded, tuple};
@@ -382,20 +382,20 @@ impl Range {
     Returns a new range that is the set-intersection between this range and `other`.
     */
     pub fn intersect(&self, other: &Self) -> Option<Self> {
-        let mut predicates = Vec::new();
+        let mut sets = Vec::new();
 
         for lefty in &self.0 {
             for righty in &other.0 {
-                if let Some(range) = lefty.intersect(righty) {
-                    predicates.push(range)
+                if let Some(set) = lefty.intersect(righty) {
+                    sets.push(set)
                 }
             }
         }
 
-        if predicates.is_empty() {
+        if sets.is_empty() {
             None
         } else {
-            Some(Self(predicates))
+            Some(Self(sets))
         }
     }
 
@@ -516,18 +516,34 @@ TODO: add tests for all these
 
 // range-set ::= range ( logical-or range ) *
 fn range_set(input: &str) -> IResult<&str, Range, SemverParseError<&str>> {
-    map(bound_sets, Range)(input)
+    map_res(bound_sets, |sets| {
+        if sets.is_empty() {
+            Err(SemverParseError {
+                input,
+                kind: Some(SemverErrorKind::NoValidRanges),
+                context: None,
+            })
+        } else {
+            Ok(Range(sets))
+        }
+    })(input)
 }
 
 // logical-or ::= ( ' ' ) * '||' ( ' ' ) *
 fn bound_sets(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
-    separated_list1(delimited(space0, tag("||"), space0), range)(input)
+    map(
+        separated_list1(delimited(space0, tag("||"), space0), range),
+        |sets| sets.into_iter().flatten().collect(),
+    )(input)
 }
 
 // range ::= hyphen | simple ( ' ' simple ) * | ''
-fn range(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
+fn range(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
     // TODO: What's up with the `''` case???
-    alt((hyphen, simples))(input)
+    alt((
+        map(hyphen, |h| std::iter::once(h).flatten().collect()),
+        simples,
+    ))(input)
 }
 
 // hyphen ::= ' - ' partial /* loose */ | partial ' - ' partial
@@ -539,7 +555,10 @@ fn hyphen(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>
         let (input, _) = space1(input)?;
         let (input, upper) = partial_version(input)?;
         let bounds = if let Some(lower) = lower {
-            BoundSet::new(Bound::Lower(Predicate::Including(lower.into())), Bound::Upper(Predicate::Including(upper.into())))
+            BoundSet::new(
+                Bound::Lower(Predicate::Including(lower.into())),
+                Bound::Upper(Predicate::Including(upper.into())),
+            )
         } else {
             BoundSet::at_most(Predicate::Including(upper.into()))
         };
@@ -548,81 +567,123 @@ fn hyphen(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>
 }
 
 // simples ::= simple ( ' ' simple ) *
-fn simples(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
+fn simples(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
     // TODO: loose parsing means that `1.2.3 foo` translates to `1.2.3`, so we
     // need to do some stuff here to filter out unwanted BoundSets.
-    map(separated_list1(space1, simple), |bounds| todo!())(input)
+    map(separated_list1(space1, simple), |bs| {
+        bs.into_iter().flatten().collect()
+    })(input)
 }
 
 // simple ::= primitive | partial | tilde | caret | garbage
-fn simple(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
+fn simple(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     // TODO: garbage needs to be parsed but thrown out in loose
     // mode.
-    alt((primitive, partial, tilde, caret))(input)
+    alt((primitive, partial, tilde, caret, garbage))(input)
 }
 
-// TODO
+// TODO: I think this is right?
 fn garbage(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     map(many_till(anychar, space1), |_| None)(input)
 }
 
 // primitive  ::= ( '<' | '>' | '>=' | '<=' | '=' ) partial
-fn primitive(
-    input: &str,
-) -> IResult<&str, BoundSet, SemverParseError<&str>> {
+fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     use Operation::*;
-    // TODO: Prereleases
     context(
         "operation range (ex: >= 1.2.3)",
-        map_opt(
-            tuple((operation, cut(preceded(space0, partial_version)))),
+        map(
+            tuple((operation, preceded(space0, partial_version))),
             |parsed| match parsed {
-                (GreaterThanEquals, partial) => BoundSet::at_least(
-                    Predicate::Including(partial.into()),
-                ),
-                (GreaterThan, Partial {major, minor: Some(minor), patch: Some(patch), pre_release, build}) => {
-                    BoundSet::at_least(Predicate::Excluding(Version {
+                (GreaterThanEquals, partial) => {
+                    BoundSet::at_least(Predicate::Including(partial.into()))
+                }
+                (
+                    GreaterThan,
+                    Partial {
+                        major,
+                        minor: Some(minor),
+                        patch: None,
+                        ..
+                    },
+                ) => BoundSet::at_least(Predicate::Including((major, minor + 1, 0).into())),
+                (
+                    GreaterThan,
+                    Partial {
+                        major,
+                        minor: None,
+                        patch: None,
+                        ..
+                    },
+                ) => BoundSet::at_least(Predicate::Including((major + 1, 0, 0).into())),
+                (GreaterThan, partial) => BoundSet::at_least(Predicate::Excluding(partial.into())),
+                (
+                    LessThan,
+                    Partial {
+                        major,
+                        minor: Some(minor),
+                        patch: None,
+                        ..
+                    },
+                ) => BoundSet::at_most(Predicate::Excluding((major, minor, 0, 0).into())),
+                (
+                    LessThan,
+                    Partial {
                         major,
                         minor,
                         patch,
-                        pre_release,
-                        build,
-                    }))
-                }
-                (GreaterThan, Partial { major, minor: Some(minor), patch: None, .. }) => {
-                    BoundSet::at_least(Predicate::Including((major, minor + 1, 0).into()))
-                }
-                (GreaterThan, Partial {major, minor: None, patch: None, ..}) => {
-                    BoundSet::at_least(Predicate::Including((major + 1, 0, 0).into()))
-                }
-                (LessThan, Partial {major, minor: Some(minor), patch: None, .. }) => {
-                    BoundSet::at_most(Predicate::Excluding((major, minor, 0, 0).into()))
-                }
-                (LessThan, Partial {major, minor, patch, .. }) => BoundSet::at_most(Predicate::Excluding(
+                        ..
+                    },
+                ) => BoundSet::at_most(Predicate::Excluding(
                     (major, minor.unwrap_or(0), patch.unwrap_or(0)).into(),
                 )),
-                (LessThanEquals, Partial {major, minor, patch: None, .. }) => BoundSet::at_most(
-                    Predicate::Including((major, minor.unwrap_or(0), 0, 0).into()),
-                ),
-                (LessThanEquals, Partial {major, minor: Some(minor), patch: Some(patch), .. }) => {
-                    BoundSet::at_most(Predicate::Including((major, minor, patch).into()))
+                (
+                    LessThanEquals,
+                    Partial {
+                        major,
+                        minor,
+                        patch: None,
+                        ..
+                    },
+                ) => BoundSet::at_most(Predicate::Including(
+                    (major, minor.unwrap_or(0), 0, 0).into(),
+                )),
+                (LessThanEquals, partial) => {
+                    BoundSet::at_most(Predicate::Including(partial.into()))
                 }
-                (Exact, Partial {major, minor: Some(minor), patch: Some(patch), .. }) => {
-                    BoundSet::exact((major, minor, patch).into())
-                }
+                (
+                    Exact,
+                    Partial {
+                        major,
+                        minor: Some(minor),
+                        patch: Some(patch),
+                        ..
+                    },
+                ) => BoundSet::exact((major, minor, patch).into()),
                 _ => unreachable!("Odd parsed version: {:?}", parsed),
             },
         ),
     )(input)
 }
 
-fn partial(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
-    context("plain version range (ex: 1.2)",
-        map_opt(
-            partial_version,
-            |partial| BoundSet::at_least(Predicate::Including(partial.into()))
-        ))
-            (input)
+fn operation(input: &str) -> IResult<&str, Operation, SemverParseError<&str>> {
+    use Operation::*;
+    alt((
+        map(tag(">="), |_| GreaterThanEquals),
+        map(tag(">"), |_| GreaterThan),
+        map(tag("="), |_| Exact),
+        map(tag("<="), |_| LessThanEquals),
+        map(tag("<"), |_| LessThan),
+    ))(input)
+}
+
+fn partial(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
+    context(
+        "plain version range (ex: 1.2)",
+        map(partial_version, |partial| {
+            BoundSet::at_least(Predicate::Including(partial.into()))
+        }),
+    )(input)
 }
 
 #[derive(Debug, Clone)]
@@ -651,6 +712,8 @@ impl From<Partial> for Version {
 // nr      ::= '0' | ['1'-'9'] ( ['0'-'9'] ) *
 // NOTE: Loose mode means nr is actually just `['0'-'9']`.
 fn partial_version(input: &str) -> IResult<&str, Partial, SemverParseError<&str>> {
+    let (input, _) = opt(tag("v"))(input)?;
+    let (input, _) = space0(input)?;
     let (input, major) = component(input)?;
     let (input, minor) = opt(preceded(tag("."), component))(input)?;
     let (input, patch) = opt(preceded(tag("."), component))(input)?;
@@ -658,14 +721,17 @@ fn partial_version(input: &str) -> IResult<&str, Partial, SemverParseError<&str>
         extras(input)?
     } else {
         (input, (vec![], vec![]))
-    }
-    Ok((input, Partial {
-        major: major.unwrap_or(0),
-        minor: minor.flatten(),
-        patch: patch.flatten(),
-        pre_release: pre,
-        build,
-    }))
+    };
+    Ok((
+        input,
+        Partial {
+            major: major.unwrap_or(0),
+            minor: minor.flatten(),
+            patch: patch.flatten(),
+            pre_release: pre,
+            build,
+        },
+    ))
 }
 
 fn component(input: &str) -> IResult<&str, Option<u64>, SemverParseError<&str>> {
@@ -676,133 +742,129 @@ fn x_or_asterisk(input: &str) -> IResult<&str, (), SemverParseError<&str>> {
     map(alt((tag("x"), tag("X"), tag("*"))), |_| ())(input)
 }
 
-// ----- OLD PARSER ------
-/*
-type PartialVersion = (
-    u64,
-    Option<u64>,
-    Option<u64>,
-    Vec<Identifier>,
-    Vec<Identifier>,
-);
-
-fn maybe_dot_number(input: &str) -> IResult<&str, Option<u64>, SemverParseError<&str>> {
-    opt(preceded(tag("."), cut(number)))(input)
-}
-
-fn any_operation_followed_by_version(
-    input: &str,
-) -> IResult<&str, BoundSet, SemverParseError<&str>> {
-    use Operation::*;
-    context(
-        "operation range (ex: >= 1.2.3)",
-        map_opt(
-            tuple((operation, cut(preceded(space0, partial_version)))),
-            |parsed| match parsed {
-                (GreaterThanEquals, (major, minor, patch, _, _)) => BoundSet::at_least(
-                    Predicate::Including((major, minor.unwrap_or(0), patch.unwrap_or(0)).into()),
-                ),
-                (GreaterThan, (major, Some(minor), Some(patch), pre_release, build)) => {
-                    BoundSet::at_least(Predicate::Excluding(Version {
-                        major,
-                        minor,
-                        patch,
-                        pre_release,
-                        build,
-                    })) // TODO: Pull through for the rest
-                }
-                (GreaterThan, (major, Some(minor), None, _, _)) => {
-                    BoundSet::at_least(Predicate::Including((major, minor + 1, 0).into()))
-                }
-                (GreaterThan, (major, None, None, _, _)) => {
-                    BoundSet::at_least(Predicate::Including((major + 1, 0, 0).into()))
-                }
-                (LessThan, (major, Some(minor), None, _, _)) => {
-                    BoundSet::at_most(Predicate::Excluding((major, minor, 0, 0).into()))
-                }
-                (LessThan, (major, minor, patch, _, _)) => BoundSet::at_most(Predicate::Excluding(
-                    (major, minor.unwrap_or(0), patch.unwrap_or(0)).into(),
-                )),
-                (LessThanEquals, (major, minor, None, _, _)) => BoundSet::at_most(
-                    Predicate::Including((major, minor.unwrap_or(0), 0, 0).into()),
-                ),
-                (LessThanEquals, (major, Some(minor), Some(patch), _, _)) => {
-                    BoundSet::at_most(Predicate::Including((major, minor, patch).into()))
-                }
-                (Exact, (major, Some(minor), Some(patch), _, _)) => {
-                    BoundSet::exact((major, minor, patch).into())
-                }
-                _ => unreachable!("Odd parsed version: {:?}", parsed),
-            },
-        ),
+fn tilde_gt(input: &str) -> IResult<&str, Option<&str>, SemverParseError<&str>> {
+    map(
+        tuple((tag("~"), space0, opt(tag(">")), space0)),
+        |(_, _, gt, _)| gt,
     )(input)
 }
 
-fn x_and_asterisk_version(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
+fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     context(
-        "partial wildcard range (ex: 1.*)",
-        map(
-            tuple((
-                number,
-                preceded(
-                    tag("."),
-                    alt((
-                        map(tuple((x_or_asterisk, tag("."), cut(x_or_asterisk))), |_| {
-                            None
-                        }),
-                        map(
-                            tuple((number, tag("."), cut(x_or_asterisk))),
-                            |(minor, _, _)| Some(minor),
-                        ),
-                        map(cut(x_or_asterisk), |_| None),
-                    )),
-                ),
-            )),
-            |(major, maybe_minor)| BoundSet {
-                upper: upper_bound(major, maybe_minor),
-                lower: lower_bound(major, maybe_minor),
-            },
-        ),
+        "tilde version range (ex: ~1.2.3)",
+        map(tuple((tilde_gt, partial_version)), |parsed| match parsed {
+            (
+                Some(_gt),
+                Partial {
+                    major,
+                    minor: None,
+                    patch: None,
+                    ..
+                },
+            ) => BoundSet::new(
+                Bound::Lower(Predicate::Including((major, 0, 0).into())),
+                Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
+            ),
+            (
+                Some(_gt),
+                Partial {
+                    major,
+                    minor: Some(minor),
+                    patch: Some(patch),
+                    ..
+                },
+            ) => BoundSet::new(
+                Bound::Lower(Predicate::Including((major, minor, patch).into())),
+                Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
+            ),
+            (
+                None,
+                Partial {
+                    major,
+                    minor: Some(minor),
+                    patch: Some(patch),
+                    ..
+                },
+            ) => BoundSet::new(
+                Bound::Lower(Predicate::Including((major, minor, patch).into())),
+                Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
+            ),
+            (
+                None,
+                Partial {
+                    major,
+                    minor: Some(minor),
+                    patch: None,
+                    ..
+                },
+            ) => BoundSet::new(
+                Bound::Lower(Predicate::Including((major, minor, 0).into())),
+                Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
+            ),
+            (
+                None,
+                Partial {
+                    major,
+                    minor: None,
+                    patch: None,
+                    ..
+                },
+            ) => BoundSet::new(
+                Bound::Lower(Predicate::Including((major, 0, 0).into())),
+                Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
+            ),
+            _ => unreachable!("Should not have gotten here"),
+        }),
     )(input)
 }
 
-fn lower_bound(major: u64, maybe_minor: Option<u64>) -> Bound {
-    Bound::Lower(Predicate::Including(
-        (major, maybe_minor.unwrap_or(0), 0).into(),
-    ))
-}
-
-fn upper_bound(major: u64, maybe_minor: Option<u64>) -> Bound {
-    if let Some(minor) = maybe_minor {
-        Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into()))
-    } else {
-        Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into()))
-    }
-}
-
-fn caret(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
+fn caret(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     context(
         "caret version range (ex: ^1.2.3)",
-        map_opt(
-            preceded(tuple((tag("^"), space0)), cut(partial_version)),
+        map(
+            preceded(tuple((tag("^"), space0)), partial_version),
             |parsed| match parsed {
-                (0, None, None, _, _) => {
-                    BoundSet::at_most(Predicate::Excluding((1, 0, 0, 0).into()))
-                }
-                (0, Some(minor), None, _, _) => BoundSet::new(
+                Partial {
+                    major: 0,
+                    minor: None,
+                    patch: None,
+                    ..
+                } => BoundSet::at_most(Predicate::Excluding((1, 0, 0, 0).into())),
+                Partial {
+                    major: 0,
+                    minor: Some(minor),
+                    patch: None,
+                    ..
+                } => BoundSet::new(
                     Bound::Lower(Predicate::Including((0, minor, 0).into())),
                     Bound::Upper(Predicate::Excluding((0, minor + 1, 0, 0).into())),
                 ),
                 // TODO: can be compressed?
-                (major, None, None, _, _) => BoundSet::new(
+                Partial {
+                    major,
+                    minor: None,
+                    patch: None,
+                    ..
+                } => BoundSet::new(
                     Bound::Lower(Predicate::Including((major, 0, 0).into())),
                     Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
                 ),
-                (major, Some(minor), None, _, _) => BoundSet::new(
+                Partial {
+                    major,
+                    minor: Some(minor),
+                    patch: None,
+                    ..
+                } => BoundSet::new(
                     Bound::Lower(Predicate::Including((major, minor, 0).into())),
                     Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
                 ),
-                (major, Some(minor), Some(patch), pre_release, _) => BoundSet::new(
+                Partial {
+                    major,
+                    minor: Some(minor),
+                    patch: Some(patch),
+                    pre_release,
+                    ..
+                } => BoundSet::new(
                     Bound::Lower(Predicate::Including(Version {
                         major,
                         minor,
@@ -821,131 +883,6 @@ fn caret(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
         ),
     )(input)
 }
-
-fn tilde_gt(input: &str) -> IResult<&str, Option<&str>, SemverParseError<&str>> {
-    map(
-        tuple((tag("~"), space0, opt(tag(">")), space0)),
-        |(_, _, gt, _)| gt,
-    )(input)
-}
-
-fn tilde(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
-    context(
-        "tilde version range (ex: ~1.2.3)",
-        map_opt(
-            tuple((tilde_gt, cut(partial_version))),
-            |parsed| match parsed {
-                (Some(_gt), (major, None, None, _, _)) => BoundSet::new(
-                    Bound::Lower(Predicate::Including((major, 0, 0).into())),
-                    Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
-                ),
-                (Some(_gt), (major, Some(minor), Some(patch), _, _)) => BoundSet::new(
-                    Bound::Lower(Predicate::Including((major, minor, patch).into())),
-                    Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
-                ),
-                (None, (major, Some(minor), Some(patch), _, _)) => BoundSet::new(
-                    Bound::Lower(Predicate::Including((major, minor, patch).into())),
-                    Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
-                ),
-                (None, (major, Some(minor), None, _, _)) => BoundSet::new(
-                    Bound::Lower(Predicate::Including((major, minor, 0).into())),
-                    Bound::Upper(Predicate::Excluding((major, minor + 1, 0, 0).into())),
-                ),
-                (None, (major, None, None, _, _)) => BoundSet::new(
-                    Bound::Lower(Predicate::Including((major, 0, 0).into())),
-                    Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
-                ),
-                _ => unreachable!("Should not have gotten here"),
-            },
-        ),
-    )(input)
-}
-
-fn hyphenated<'a, F, G, S, T>(
-    left: F,
-    right: G,
-) -> impl Fn(&'a str) -> IResult<&'a str, (S, T), SemverParseError<&'a str>>
-where
-    F: Fn(&'a str) -> IResult<&'a str, S, SemverParseError<&'a str>>,
-    G: Fn(&'a str) -> IResult<&'a str, T, SemverParseError<&'a str>>,
-{
-    move |input: &'a str| {
-        map(tuple((&left, spaced_hyphen, cut(&right))), |(l, _, r)| {
-            (l, r)
-        })(input)
-    }
-}
-
-fn hyphenated_range(input: &str) -> IResult<&str, BoundSet, SemverParseError<&str>> {
-    context(
-        "hyphenated version range (ex: 1.2 - 2)",
-        map_opt(
-            hyphenated(partial_version, partial_version),
-            |((left, maybe_l_minor, maybe_l_patch, pre_release, _), upper)| {
-                BoundSet::new(
-                    Bound::Lower(Predicate::Including(Version {
-                        major: left,
-                        minor: maybe_l_minor.unwrap_or(0),
-                        patch: maybe_l_patch.unwrap_or(0),
-                        pre_release,
-                        build: vec![],
-                    })),
-                    Bound::Upper(match upper {
-                        (major, None, None, _, _) => {
-                            Predicate::Excluding((major + 1, 0, 0, 0).into())
-                        }
-                        (major, Some(minor), None, _, _) => {
-                            Predicate::Excluding((major, minor + 1, 0, 0).into())
-                        }
-                        (major, Some(minor), Some(patch), pre_release, _) => {
-                            Predicate::Including(Version {
-                                major,
-                                minor,
-                                patch,
-                                pre_release,
-                                build: vec![],
-                            })
-                        }
-                        _ => unreachable!("No way to a have a patch without a minor"),
-                    }),
-                )
-            },
-        ),
-    )(input)
-}
-
-fn no_operation_followed_by_version(
-    input: &str,
-) -> IResult<&str, BoundSet, SemverParseError<&str>> {
-    context(
-        "plain version range (ex: 1.2)",
-        map_opt(partial_version, |parsed| match parsed {
-            (major, Some(minor), Some(patch), _, _) => {
-                BoundSet::exact((major, minor, patch).into())
-            }
-            (major, maybe_minor, _, _, _) => BoundSet::new(
-                lower_bound(major, maybe_minor),
-                upper_bound(major, maybe_minor),
-            ),
-        }),
-    )(input)
-}
-
-fn spaced_hyphen(input: &str) -> IResult<&str, (), SemverParseError<&str>> {
-    map(tuple((space0, tag("-"), space0)), |_| ())(input)
-}
-
-fn operation(input: &str) -> IResult<&str, Operation, SemverParseError<&str>> {
-    use Operation::*;
-    alt((
-        map(tag(">="), |_| GreaterThanEquals),
-        map(tag(">"), |_| GreaterThan),
-        map(tag("="), |_| Exact),
-        map(tag("<="), |_| LessThanEquals),
-        map(tag("<"), |_| LessThan),
-    ))(input)
-}
-*/
 
 macro_rules! create_tests_for {
     ($func:ident $($name:ident => $version_range:expr , { $x:ident => $allows:expr, $y:ident => $denies:expr$(,)? }),+ ,$(,)?) => {

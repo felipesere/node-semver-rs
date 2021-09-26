@@ -14,7 +14,7 @@ use thiserror::Error;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::bytes::complete::take_while;
-use nom::character::complete::digit1;
+use nom::character::complete::{digit1, space0};
 use nom::character::is_alphanumeric;
 use nom::combinator::{all_consuming, map, map_res, opt, recognize};
 use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
@@ -182,6 +182,12 @@ pub enum SemverErrorKind {
     Context(&'static str),
 
     /**
+     */
+    #[error("No valid ranges could be parsed")]
+    #[diagnostic(code(node_semver::no_valid_ranges), url(docsrs), help("node-semver parses in so-called 'loose' mode. This means that if you have a slightly incorrect semver operator (`>=1.y`, for ex.), it will get thrown away. This error only happens if _all_ your input ranges were invalid semver in this way."))]
+    NoValidRanges,
+
+    /**
     This error is mostly nondescript. Feel free to file an issue if you run
     into it.
     */
@@ -192,9 +198,9 @@ pub enum SemverErrorKind {
 
 #[derive(Debug)]
 struct SemverParseError<I> {
-    input: I,
-    context: Option<&'static str>,
-    kind: Option<SemverErrorKind>,
+    pub(crate) input: I,
+    pub(crate) context: Option<&'static str>,
+    pub(crate) kind: Option<SemverErrorKind>,
 }
 
 impl<I> ParseError<I> for SemverParseError<I> {
@@ -483,8 +489,8 @@ fn version(input: &str) -> IResult<&str, Version, SemverParseError<&str>> {
     context(
         "version",
         map(
-            tuple((version_core, extras)),
-            |((major, minor, patch), (pre_release, build))| Version {
+            tuple((opt(alt((tag("v"), tag("V")))), space0, version_core, extras)),
+            |(_, _, (major, minor, patch), (pre_release, build))| Version {
                 major,
                 minor,
                 patch,
