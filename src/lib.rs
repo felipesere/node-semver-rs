@@ -12,9 +12,8 @@ use serde::{
 use thiserror::Error;
 
 use nom::branch::alt;
-use nom::bytes::complete::tag;
-use nom::bytes::complete::take_while;
-use nom::character::complete::digit1;
+use nom::bytes::complete::{tag, take_while1};
+use nom::character::complete::{digit1, space0};
 use nom::character::is_alphanumeric;
 use nom::combinator::{all_consuming, map, map_res, opt, recognize};
 use nom::error::{context, ContextError, ErrorKind, FromExternalError, ParseError};
@@ -42,7 +41,7 @@ This wrapper is used to hold some parsing-related metadata, as well as
 a more specific [SemverErrorKind].
 */
 #[derive(Debug, Clone, Error, Eq, PartialEq)]
-#[error("Error parsing semver string. {kind}")]
+#[error("{kind}")]
 pub struct SemverError {
     input: String,
     span: SourceSpan,
@@ -177,9 +176,15 @@ pub enum SemverErrorKind {
     This is a generic error that a certain component of the semver string
     failed to parse.
     */
-    #[error("Failed to parse {0} component of semver string.")]
+    #[error("Failed to parse {0}.")]
     #[diagnostic(code(node_semver::parse_component_error), url(docsrs))]
     Context(&'static str),
+
+    /**
+     */
+    #[error("No valid ranges could be parsed")]
+    #[diagnostic(code(node_semver::no_valid_ranges), url(docsrs), help("node-semver parses in so-called 'loose' mode. This means that if you have a slightly incorrect semver operator (`>=1.y`, for ex.), it will get thrown away. This error only happens if _all_ your input ranges were invalid semver in this way."))]
+    NoValidRanges,
 
     /**
     This error is mostly nondescript. Feel free to file an issue if you run
@@ -192,9 +197,9 @@ pub enum SemverErrorKind {
 
 #[derive(Debug)]
 struct SemverParseError<I> {
-    input: I,
-    context: Option<&'static str>,
-    kind: Option<SemverErrorKind>,
+    pub(crate) input: I,
+    pub(crate) context: Option<&'static str>,
+    pub(crate) kind: Option<SemverErrorKind>,
 }
 
 impl<I> ParseError<I> for SemverParseError<I> {
@@ -483,8 +488,8 @@ fn version(input: &str) -> IResult<&str, Version, SemverParseError<&str>> {
     context(
         "version",
         map(
-            tuple((version_core, extras)),
-            |((major, minor, patch), (pre_release, build))| Version {
+            tuple((opt(alt((tag("v"), tag("V")))), space0, version_core, extras)),
+            |(_, _, (major, minor, patch), (pre_release, build))| Version {
                 major,
                 minor,
                 patch,
@@ -533,7 +538,7 @@ fn build(input: &str) -> IResult<&str, Vec<Identifier>, SemverParseError<&str>> 
 fn pre_release(input: &str) -> IResult<&str, Vec<Identifier>, SemverParseError<&str>> {
     context(
         "pre_release version",
-        preceded(tag("-"), separated_list1(tag("."), identifier)),
+        preceded(opt(tag("-")), separated_list1(tag("."), identifier)),
     )(input)
 }
 
@@ -541,7 +546,7 @@ fn identifier(input: &str) -> IResult<&str, Identifier, SemverParseError<&str>> 
     context(
         "identifier",
         map(
-            take_while(|x: char| is_alphanumeric(x as u8) || x == '-'),
+            take_while1(|x: char| is_alphanumeric(x as u8) || x == '-'),
             |s: &str| {
                 str::parse::<u64>(s)
                     .map(Identifier::Numeric)
@@ -798,7 +803,7 @@ mod tests {
     fn individual_version_component_has_an_upper_bound() {
         let out_of_range = MAX_SAFE_INTEGER + 1;
         let v = Version::parse(format!("1.2.{}", out_of_range));
-        assert_eq!(v.err().expect("Parse should have failed.").to_string(), "Error parsing semver string. Integer component of semver string is larger than JavaScript's Number.MAX_SAFE_INTEGER: 900719925474100");
+        assert_eq!(v.err().expect("Parse should have failed.").to_string(), "Integer component of semver string is larger than JavaScript's Number.MAX_SAFE_INTEGER: 900719925474100");
     }
 
     #[test]
@@ -809,12 +814,44 @@ mod tests {
 
         assert_eq!(
             v.err().expect("Parse should have failed").to_string(),
-            "Error parsing semver string. Semver string can't be longer than 256 characters."
+            "Semver string can't be longer than 256 characters."
         );
 
         let ok_version = version_string[0..255].to_string();
         let v = Version::parse(ok_version);
         assert!(v.is_ok());
+    }
+
+    #[test]
+    fn version_prefixed_with_v() {
+        // TODO: This is part of strict parsing for node-semver!
+        let v = Version::parse("v1.2.3").unwrap();
+        assert_eq!(
+            v,
+            Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                pre_release: vec![],
+                build: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn version_prefixed_with_v_space() {
+        // TODO: Loose parsing supports this, so
+        let v = Version::parse("v 1.2.3").unwrap();
+        assert_eq!(
+            v,
+            Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                pre_release: vec![],
+                build: vec![],
+            }
+        );
     }
 
     #[derive(Serialize, Deserialize, Eq, PartialEq)]
