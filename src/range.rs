@@ -554,13 +554,40 @@ fn hyphen(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>
         let (input, _) = tag("-")(input)?;
         let (input, _) = space1(input)?;
         let (input, upper) = partial_version(input)?;
+        let upper = match upper {
+            Partial {
+                major,
+                minor: None,
+                patch: None,
+                ..
+            } => Predicate::Excluding(Version {
+                major: major + 1,
+                minor: 0,
+                patch: 0,
+                pre_release: vec![Identifier::Numeric(0)],
+                build: vec![],
+            }),
+            Partial {
+                major,
+                minor: Some(minor),
+                patch: None,
+                ..
+            } => Predicate::Excluding(Version {
+                major,
+                minor: minor + 1,
+                patch: 0,
+                pre_release: vec![Identifier::Numeric(0)],
+                build: vec![],
+            }),
+            partial => Predicate::Including(partial.into()),
+        };
         let bounds = if let Some(lower) = lower {
             BoundSet::new(
                 Bound::Lower(Predicate::Including(lower.into())),
-                Bound::Upper(Predicate::Including(upper.into())),
+                Bound::Upper(upper),
             )
         } else {
-            BoundSet::at_most(Predicate::Including(upper.into()))
+            BoundSet::at_most(upper)
         };
         Ok((input, bounds))
     })(input)
@@ -680,8 +707,38 @@ fn operation(input: &str) -> IResult<&str, Operation, SemverParseError<&str>> {
 fn partial(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
     context(
         "plain version range (ex: 1.2)",
-        map(partial_version, |partial| {
-            BoundSet::at_least(Predicate::Including(partial.into()))
+        map(partial_version, |partial| match partial {
+            Partial {
+                major,
+                minor: None,
+                patch: None,
+                ..
+            } => BoundSet::new(
+                Bound::Lower(Predicate::Including((major, 0, 0).into())),
+                Bound::Upper(Predicate::Excluding(Version {
+                    major: major + 1,
+                    minor: 0,
+                    patch: 0,
+                    pre_release: vec![Identifier::Numeric(0)],
+                    build: vec![],
+                })),
+            ),
+            Partial {
+                major,
+                minor: Some(minor),
+                patch: None,
+                ..
+            } => BoundSet::new(
+                Bound::Lower(Predicate::Including((major, minor, 0).into())),
+                Bound::Upper(Predicate::Excluding(Version {
+                    major,
+                    minor: minor + 1,
+                    patch: 0,
+                    pre_release: vec![Identifier::Numeric(0)],
+                    build: vec![],
+                })),
+            ),
+            partial => BoundSet::exact(partial.into()),
         }),
     )(input)
 }
