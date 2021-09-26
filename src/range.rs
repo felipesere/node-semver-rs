@@ -9,10 +9,10 @@ use serde::{
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{anychar, space0, space1};
-use nom::combinator::{all_consuming, eof, map, map_res, opt};
+use nom::combinator::{all_consuming, eof, map, map_res, opt, peek};
 use nom::error::context;
 use nom::multi::{many_till, separated_list0};
-use nom::sequence::{delimited, preceded, tuple};
+use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{Err, IResult};
 
 use crate::{extras, number, Identifier, SemverError, SemverErrorKind, SemverParseError, Version};
@@ -563,11 +563,21 @@ fn range(input: &str) -> IResult<&str, Vec<BoundSet>, SemverParseError<&str>> {
 
 // simple ::= primitive | partial | tilde | caret | garbage
 fn simple(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
-    alt((hyphen, primitive, partial, tilde, caret, garbage))(input)
+    alt((
+        terminated(hyphen, peek(alt((space1, tag("||"), eof)))),
+        terminated(primitive, peek(alt((space1, tag("||"), eof)))),
+        terminated(partial, peek(alt((space1, tag("||"), eof)))),
+        terminated(tilde, peek(alt((space1, tag("||"), eof)))),
+        terminated(caret, peek(alt((space1, tag("||"), eof)))),
+        garbage,
+    ))(input)
 }
 
 fn garbage(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>> {
-    map(many_till(anychar, alt((space1, tag("||"), eof))), |_| None)(input)
+    map(
+        many_till(anychar, alt((peek(space1), peek(tag("||")), eof))),
+        |_| None,
+    )(input)
 }
 
 // primitive  ::= ( '<' | '>' | '>=' | '<=' | '=' ) partial
@@ -1517,6 +1527,7 @@ mod tests {
         garbage1 => ["1.2.3 foo", "1.2.3"],
         garbage2 => ["foo 1.2.3", "1.2.3"],
         garbage3 => ["~1.y 1.2.3", "1.2.3"],
+        garbage4 => ["1.2.3 ~1.y", "1.2.3"],
         loose1 => [">01.02.03", ">1.2.3"],
         loose2 => ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0"],
         caret_weird => ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0"],
