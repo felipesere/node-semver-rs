@@ -649,10 +649,10 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                     Partial {
                         major,
                         minor: Some(minor),
-                        patch: Some(patch),
+                        patch,
                         ..
                     },
-                ) => BoundSet::exact((major.unwrap_or(0), minor, patch).into()),
+                ) => BoundSet::exact((major.unwrap_or(0), minor, patch.unwrap_or(0)).into()),
                 _ => unreachable!("Odd parsed version: {:?}", parsed),
             },
         ),
@@ -1531,6 +1531,7 @@ mod tests {
         loose1 => [">01.02.03", ">1.2.3"],
         loose2 => ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0"],
         caret_weird => ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0"],
+        odd => ["=0.7", "0.7.0"],
     ];
 
     /*
