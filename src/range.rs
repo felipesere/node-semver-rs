@@ -653,7 +653,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                         ..
                     },
                 ) => BoundSet::exact((major.unwrap_or(0), minor, patch.unwrap_or(0)).into()),
-                _ => unreachable!("Odd parsed version: {:?}", parsed),
+                _ => None,
             },
         ),
     )(input)
@@ -852,7 +852,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                 Bound::Lower(Predicate::Including((major, 0, 0).into())),
                 Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
             ),
-            _ => unreachable!("Should not have gotten here"),
+            _ => None,
         }),
     )(input)
 }
@@ -917,7 +917,7 @@ fn caret(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                         (n, _, _) => Version::from((n + 1, 0, 0, 0)),
                     })),
                 ),
-                _ => unreachable!(),
+                _ => None,
             },
         ),
     )(input)
