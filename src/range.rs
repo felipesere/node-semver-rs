@@ -83,7 +83,45 @@ impl BoundSet {
             ),
         };
 
-        lower_bound && upper_bound
+        if !lower_bound || !upper_bound {
+            return false;
+        }
+
+        if version.is_prerelease() {
+            let lower_version = match &self.lower {
+                Lower(Including(v)) => Some(v),
+                Lower(Excluding(v)) => Some(v),
+                _ => None,
+            };
+            if let Some(lower_version) = lower_version {
+                if lower_version.is_prerelease()
+                    && version.major == lower_version.major
+                    && version.minor == lower_version.minor
+                    && version.patch == lower_version.patch
+                {
+                    return true;
+                }
+            }
+
+            let upper_version = match &self.upper {
+                Upper(Including(v)) => Some(v),
+                Upper(Excluding(v)) => Some(v),
+                _ => None,
+            };
+            if let Some(upper_version) = upper_version {
+                if upper_version.is_prerelease()
+                    && version.major == upper_version.major
+                    && version.minor == upper_version.minor
+                    && version.patch == upper_version.patch
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        true
     }
 
     fn allows_all(&self, other: &BoundSet) -> bool {
