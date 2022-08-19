@@ -1433,6 +1433,16 @@ mod satisfies_ranges_tests {
         refute!(parsed.satisfies(&(2, 0, 0).into()), "exact top of range");
         refute!(parsed.satisfies(&(2, 7, 3).into()), "above");
     }
+
+    #[test]
+    fn pre_release() {
+        let range = Range::parse("^2").expect("unable to parse");
+        let non_zero_minor_pre_release = Version::parse("2.3.1-alpha.0").expect("unable to parse");
+        let zero_minor_pre_release = Version::parse("2.0.0-alpha.0").expect("unable to parse");
+
+        refute!(range.satisfies(&zero_minor_pre_release), "0 minor");
+        refute!(range.satisfies(&non_zero_minor_pre_release), "non-0 minor");
+    }
 }
 
 /// https://github.com/npm/node-semver/blob/master/test/fixtures/range-parse.js
