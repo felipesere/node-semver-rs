@@ -1473,13 +1473,51 @@ mod satisfies_ranges_tests {
     }
 
     #[test]
-    fn pre_release() {
-        let range = Range::parse("^2").expect("unable to parse");
-        let non_zero_minor_pre_release = Version::parse("2.3.1-alpha.0").expect("unable to parse");
-        let zero_minor_pre_release = Version::parse("2.0.0-alpha.0").expect("unable to parse");
+    fn pre_release_version() {
+        let range = Range::parse("^2").unwrap();
 
-        refute!(range.satisfies(&zero_minor_pre_release), "0 minor");
-        refute!(range.satisfies(&non_zero_minor_pre_release), "non-0 minor");
+        refute!(
+            range.satisfies(&Version::parse("2.0.0-alpha.0").unwrap()),
+            "below"
+        );
+        refute!(
+            range.satisfies(&Version::parse("2.1.0-alpha.0").unwrap()),
+            "above but pre-release"
+        );
+    }
+
+    #[test]
+    fn pre_release_range() {
+        let range = Range::parse("^1.2.3-rc.4").unwrap();
+
+        refute!(range.satisfies(&Version::parse("1.2.2").unwrap()), "below");
+        assert!(
+            range.satisfies(&Version::parse("1.2.3").unwrap()),
+            "equal non-prerelease"
+        );
+        assert!(range.satisfies(&Version::parse("1.2.4").unwrap()), "above");
+    }
+
+    #[test]
+    fn pre_release_version_and_range() {
+        let range = Range::parse("^1.2.3-rc.4").unwrap();
+
+        refute!(
+            range.satisfies(&Version::parse("1.2.3-rc.3").unwrap()),
+            "below"
+        );
+        assert!(
+            range.satisfies(&Version::parse("1.2.3-rc.4").unwrap()),
+            "equal"
+        );
+        assert!(
+            range.satisfies(&Version::parse("1.2.3-rc.5").unwrap()),
+            "above"
+        );
+        refute!(
+            range.satisfies(&Version::parse("1.2.4-rc.6").unwrap()),
+            "above patch but pre-release"
+        );
     }
 }
 
