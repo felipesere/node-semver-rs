@@ -83,7 +83,45 @@ impl BoundSet {
             ),
         };
 
-        lower_bound && upper_bound
+        if !lower_bound || !upper_bound {
+            return false;
+        }
+
+        if version.is_prerelease() {
+            let lower_version = match &self.lower {
+                Lower(Including(v)) => Some(v),
+                Lower(Excluding(v)) => Some(v),
+                _ => None,
+            };
+            if let Some(lower_version) = lower_version {
+                if lower_version.is_prerelease()
+                    && version.major == lower_version.major
+                    && version.minor == lower_version.minor
+                    && version.patch == lower_version.patch
+                {
+                    return true;
+                }
+            }
+
+            let upper_version = match &self.upper {
+                Upper(Including(v)) => Some(v),
+                Upper(Excluding(v)) => Some(v),
+                _ => None,
+            };
+            if let Some(upper_version) = upper_version {
+                if upper_version.is_prerelease()
+                    && version.major == upper_version.major
+                    && version.minor == upper_version.minor
+                    && version.patch == upper_version.patch
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        true
     }
 
     fn allows_all(&self, other: &BoundSet) -> bool {
@@ -1432,6 +1470,54 @@ mod satisfies_ranges_tests {
         assert!(parsed.satisfies(&(1, 2, 2).into()), "middle");
         refute!(parsed.satisfies(&(2, 0, 0).into()), "exact top of range");
         refute!(parsed.satisfies(&(2, 7, 3).into()), "above");
+    }
+
+    #[test]
+    fn pre_release_version() {
+        let range = Range::parse("^2").unwrap();
+
+        refute!(
+            range.satisfies(&Version::parse("2.0.0-alpha.0").unwrap()),
+            "below"
+        );
+        refute!(
+            range.satisfies(&Version::parse("2.1.0-alpha.0").unwrap()),
+            "above but pre-release"
+        );
+    }
+
+    #[test]
+    fn pre_release_range() {
+        let range = Range::parse("^1.2.3-rc.4").unwrap();
+
+        refute!(range.satisfies(&Version::parse("1.2.2").unwrap()), "below");
+        assert!(
+            range.satisfies(&Version::parse("1.2.3").unwrap()),
+            "equal non-prerelease"
+        );
+        assert!(range.satisfies(&Version::parse("1.2.4").unwrap()), "above");
+    }
+
+    #[test]
+    fn pre_release_version_and_range() {
+        let range = Range::parse("^1.2.3-rc.4").unwrap();
+
+        refute!(
+            range.satisfies(&Version::parse("1.2.3-rc.3").unwrap()),
+            "below"
+        );
+        assert!(
+            range.satisfies(&Version::parse("1.2.3-rc.4").unwrap()),
+            "equal"
+        );
+        assert!(
+            range.satisfies(&Version::parse("1.2.3-rc.5").unwrap()),
+            "above"
+        );
+        refute!(
+            range.satisfies(&Version::parse("1.2.4-rc.6").unwrap()),
+            "above patch but pre-release"
+        );
     }
 }
 
