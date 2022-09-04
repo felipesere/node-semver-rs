@@ -625,7 +625,8 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
         "operation range (ex: >= 1.2.3)",
         map(
             tuple((operation, preceded(space0, partial_version))),
-            |parsed| match parsed {
+            |parsed| {
+                match parsed {
                 (GreaterThanEquals, partial) => {
                     BoundSet::at_least(Predicate::Including(partial.into()))
                 }
@@ -736,6 +737,7 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                     })),
                 ),
                 _ => unreachable!("Failed to parse operation. This should not happen and should be reported as a bug, while parsing {}", input),
+            }
             },
         ),
     )(input)
@@ -934,7 +936,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                 Bound::Lower(Predicate::Including((major, 0, 0).into())),
                 Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
             ),
-            _ => unreachable!("This should not have parsed: {}", input)
+            _ => unreachable!("This should not have parsed: {}", input),
         }),
     )(input)
 }
