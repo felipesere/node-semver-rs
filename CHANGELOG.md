@@ -1,5 +1,13 @@
 # `node-semver` Release Changelog
 
+<a name="2.0.1"></a>
+## 2.0.1 (2022-09-04)
+
+### Bug Fixes
+
+* **satisfies:** Fix `.satisfies` bug for higher major/minor/path pre-release versions (#8) ([ee8376e7](https://github.com/felipesere/node-semver-rs/commit/ee8376e7f060cb19829e5e0e62c1a729cf4653f8))
+* **range:** handle partial `=` ranges, which was causing panics (#7) ([f0eef040](https://github.com/felipesere/node-semver-rs/commit/f0eef04032cf1fe7ed341a110897005c31e61ead))
+
 <a name="2.0.0"></a>
 ## 2.0.0 (2021-09-26)
 
