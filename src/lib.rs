@@ -71,7 +71,7 @@ impl Diagnostic for SemverError {
 
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
         Some(Box::new(std::iter::once(
-            miette::LabeledSpan::new_with_span(Some("here".into()), self.span().clone()),
+            miette::LabeledSpan::new_with_span(Some("here".into()), *self.span()),
         )))
     }
 }
