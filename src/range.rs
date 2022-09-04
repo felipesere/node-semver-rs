@@ -647,13 +647,57 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                 (
                     Exact,
                     Partial {
-                        major,
+                        major: Some(major),
                         minor: Some(minor),
-                        patch,
+                        patch: Some(patch),
+                        pre_release,
                         ..
                     },
-                ) => BoundSet::exact((major.unwrap_or(0), minor, patch.unwrap_or(0)).into()),
-                _ => None,
+                ) => BoundSet::exact( Version {
+                    major,
+                    minor,
+                    patch,
+                    pre_release,
+                    build: vec![],
+                }),
+                (
+                    Exact,
+                    Partial {
+                        major: Some(major),
+                        minor: Some(minor),
+                        ..
+                    },
+                ) => BoundSet::new(
+                    Bound::Lower(Predicate::Including(
+                        (major, minor, 0).into(),
+                    )),
+                    Bound::Upper(Predicate::Excluding(Version {
+                        major,
+                        minor: minor + 1,
+                        patch: 0,
+                        pre_release: vec![Identifier::Numeric(0)],
+                        build: vec![],
+                    })),
+                ),
+                (
+                    Exact,
+                    Partial {
+                        major: Some(major),
+                        ..
+                    },
+                ) => BoundSet::new(
+                    Bound::Lower(Predicate::Including(
+                        (major, 0, 0).into(),
+                    )),
+                    Bound::Upper(Predicate::Excluding(Version {
+                        major: major + 1,
+                        minor: 0,
+                        patch: 0,
+                        pre_release: vec![Identifier::Numeric(0)],
+                        build: vec![],
+                    })),
+                ),
+                _ => unreachable!("Failed to parse operation. This should not happen and should be reported as a bug, while parsing {}", input),
             },
         ),
     )(input)
@@ -795,7 +839,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                 Partial {
                     major: Some(major),
                     minor: Some(minor),
-                    patch: Some(patch),
+                    patch,
                     pre_release,
                     ..
                 },
@@ -803,7 +847,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                 Bound::Lower(Predicate::Including(Version {
                     major,
                     minor,
-                    patch,
+                    patch: patch.unwrap_or(0),
                     pre_release,
                     build: vec![],
                 })),
@@ -852,7 +896,7 @@ fn tilde(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&str>>
                 Bound::Lower(Predicate::Including((major, 0, 0).into())),
                 Bound::Upper(Predicate::Excluding((major + 1, 0, 0, 0).into())),
             ),
-            _ => None,
+            _ => unreachable!("This should not have parsed: {}", input)
         }),
     )(input)
 }
@@ -1531,7 +1575,8 @@ mod tests {
         loose1 => [">01.02.03", ">1.2.3"],
         loose2 => ["~1.2.3beta", ">=1.2.3-beta <1.3.0-0"],
         caret_weird => ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0"],
-        odd => ["=0.7", "0.7.0"],
+        loose_eq1 => ["=0.7", ">=0.7.0 <0.8.0-0"],
+        loose_eq2 => ["=1", ">=1.0.0 <2.0.0-0"],
     ];
 
     /*
