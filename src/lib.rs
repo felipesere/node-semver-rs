@@ -71,7 +71,7 @@ impl Diagnostic for SemverError {
 
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
         Some(Box::new(std::iter::once(
-            miette::LabeledSpan::new_with_span(Some("here".into()), self.span().clone()),
+            miette::LabeledSpan::new_with_span(Some("here".into()), *self.span()),
         )))
     }
 }
@@ -803,7 +803,7 @@ mod tests {
     fn individual_version_component_has_an_upper_bound() {
         let out_of_range = MAX_SAFE_INTEGER + 1;
         let v = Version::parse(format!("1.2.{}", out_of_range));
-        assert_eq!(v.err().expect("Parse should have failed.").to_string(), "Integer component of semver string is larger than JavaScript's Number.MAX_SAFE_INTEGER: 900719925474100");
+        assert_eq!(v.expect_err("Parse should have failed.").to_string(), "Integer component of semver string is larger than JavaScript's Number.MAX_SAFE_INTEGER: 900719925474100");
     }
 
     #[test]
@@ -813,7 +813,7 @@ mod tests {
         let v = Version::parse(version_string.clone());
 
         assert_eq!(
-            v.err().expect("Parse should have failed").to_string(),
+            v.expect_err("Parse should have failed").to_string(),
             "Semver string can't be longer than 256 characters."
         );
 
