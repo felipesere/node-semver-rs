@@ -1,6 +1,6 @@
 [package]
 name = "node-semver"
-version = "2.0.2-alpha.0"
+version = "2.1.0"
 authors = ["Felipe Sere <felipesere@gmail.com>", "Kat Marchán <kzm@zkat.tech>"]
 description = "A node-semver compliant semver implementation in Rust."
 repository = "https://github.com/felipesere/node-semver-rs"
