@@ -1,5 +1,12 @@
 # `node-semver` Release Changelog
 
+<a name="2.1.0"></a>
+## 2.1.0 (2022-09-21)
+
+### Features
+
+* **format:** Include the build and prerelease when stringifying to maintain consistency (#9) ([f2b2e44c](https://github.com/felipesere/node-semver-rs/commit/f2b2e44c8dfe815c194c4f458025fbbbf418fd9f))
+
 <a name="2.0.1"></a>
 ## 2.0.1 (2022-09-04)
 
