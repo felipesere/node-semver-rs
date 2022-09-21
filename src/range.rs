@@ -664,11 +664,17 @@ fn primitive(input: &str) -> IResult<&str, Option<BoundSet>, SemverParseError<&s
                         major,
                         minor,
                         patch,
+                        pre_release,
+                        build,
                         ..
                     },
-                ) => BoundSet::at_most(Predicate::Excluding(
-                    (major.unwrap_or(0), minor.unwrap_or(0), patch.unwrap_or(0)).into(),
-                )),
+                ) => BoundSet::at_most(Predicate::Excluding(Version {
+                    major: major.unwrap_or(0),
+                    minor: minor.unwrap_or(0),
+                    patch: patch.unwrap_or(0),
+                    build,
+                    pre_release,
+                })),
                 (
                     LessThanEquals,
                     Partial {
@@ -1665,6 +1671,8 @@ mod tests {
         caret_weird => ["^ 1.2 ^ 1", ">=1.2.0 <2.0.0-0"],
         loose_eq1 => ["=0.7", ">=0.7.0 <0.8.0-0"],
         loose_eq2 => ["=1", ">=1.0.0 <2.0.0-0"],
+        consistent => ["^1.0.1", ">=1.0.1 <2.0.0-0"],
+        consistent2 => [">=1.0.1 <2.0.0-0", ">=1.0.1 <2.0.0-0"],
     ];
 
     /*
