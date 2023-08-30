@@ -214,11 +214,11 @@ enum Predicate {
 }
 
 impl Predicate {
-    fn flip(&self) -> Self {
+    fn flip(self) -> Self {
         use Predicate::*;
         match self {
-            Excluding(v) => Including(v.clone()),
-            Including(v) => Excluding(v.clone()),
+            Excluding(v) => Including(v),
+            Including(v) => Excluding(v),
             Unbounded => Unbounded,
         }
     }
@@ -239,12 +239,12 @@ impl Bound {
         Bound::Lower(Predicate::Unbounded)
     }
 
-    fn predicate(&self) -> Predicate {
+    fn predicate(self) -> Predicate {
         use Bound::*;
 
         match self {
-            Lower(p) => p.clone(),
-            Upper(p) => p.clone(),
+            Lower(p) => p,
+            Upper(p) => p,
         }
     }
 }
