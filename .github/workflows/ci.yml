@@ -28,7 +28,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        rust: [1.56.0, stable]
         os: [ubuntu-latest, macOS-latest, windows-latest]
 
     steps:
@@ -37,9 +36,32 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ matrix.rust }}
+          toolchain: stable
           components: clippy
           override: true
+      - name: Clippy
+        run: cargo clippy --all -- -D warnings
+      - name: Run tests
+        run: cargo test --all --verbose
+
+  msrv:
+    name: Build & Test on MSRV
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.56.0
+          components: clippy
+          override: true
+      - name: Pin unicode-width to 0.1.12
+        run: cargo update --package unicode-width --precise 0.1.12
       - name: Clippy
         run: cargo clippy --all -- -D warnings
       - name: Run tests
