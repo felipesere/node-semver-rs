@@ -9,6 +9,9 @@ license = "Apache-2.0"
 readme = "README.md"
 edition = "2018"
 
+[features]
+__bench = ["dep:criterion"]
+
 [dependencies]
 miette = "5.3.0"
 nom = "7.1.1"
@@ -16,12 +19,15 @@ thiserror = "1.0.30"
 bytecount = "0.6.0"
 serde = "1.0.126"
 
+# benchmark
+criterion = {  version = "0.5.1", features = ["html_reports"], optional = true }
+
 [dev-dependencies]
 pretty_assertions = "0.6.1"
 serde_derive      = "1.0.115"
 serde_json        = "1.0.57"
-criterion         = {  version = "0.5.1", features = ["html_reports"] }
 
 [[bench]]
 name = "parser"
 harness = false
+required-features = ["__bench"]
