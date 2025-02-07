@@ -1,5 +1,21 @@
 # `node-semver` Release Changelog
 
+<a name="2.2.0"></a>
+## 2.2.0 (2025-02-07)
+
+### Features
+
+* **range:** Add Range::min_version function (#12) ([6c0605ff](https://github.com/felipesere/node-semver-rs/commit/6c0605ffc55eb1bb9998e6c7cf2963b376cb024a))
+* **version:** add const constructor (#13) ([da8c0534](https://github.com/felipesere/node-semver-rs/commit/da8c0534b0552c12c0cafa96a4dd15190f43fbdd))
+* **deps:** Upgrade miette to v7 (#19) ([3672e105](https://github.com/felipesere/node-semver-rs/commit/3672e1056e6039d0643216134871e0804c5fdac3))
+* **msrv:** bump msrv to 1.70.0 ([7f726ba4](https://github.com/felipesere/node-semver-rs/commit/7f726ba492ad35f14d8b17d568cd88adcef1aba1))
+
+### Bug Fixes
+
+* **perf:** reduce cloning operations (#11) ([6cfa18af](https://github.com/felipesere/node-semver-rs/commit/6cfa18af655ceaa236d39e8f889bd4553d09177a))
+* **compat:** bump msrv to 1.62 (#16) ([fab02147](https://github.com/felipesere/node-semver-rs/commit/fab021478bc04c3cf1aae3613c51ec0a9d7e083e))
+* **clippy:** clippy fixes ([f00a8561](https://github.com/felipesere/node-semver-rs/commit/f00a8561fe9cb914834a5175e2977fceea9ccdfb))
+
 <a name="2.1.0"></a>
 ## 2.1.0 (2022-09-21)
 
