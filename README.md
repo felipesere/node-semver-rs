@@ -22,3 +22,7 @@ let range: Range = "^1.2".parse().unwrap();
 
 assert!(version.satisfies(&range));
 ```
+
+## Minimum Suggested Rust Version (MSRV)
+
+You must be 1.70.0 or taller to get on this ride.
