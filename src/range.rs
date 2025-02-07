@@ -533,7 +533,7 @@ impl<'de> Deserialize<'de> for Range {
         struct VersionReqVisitor;
 
         /// Deserialize `VersionReq` from a string.
-        impl<'de> Visitor<'de> for VersionReqVisitor {
+        impl Visitor<'_> for VersionReqVisitor {
             type Value = Range;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
