@@ -4,7 +4,6 @@ use std::cmp::{self, Ordering};
 use std::fmt;
 use std::num::ParseIntError;
 
-use miette::{Diagnostic, SourceSpan};
 use serde::{
     de::{self, Deserialize, Deserializer, Visitor},
     ser::{Serialize, Serializer},
@@ -44,11 +43,13 @@ a more specific [SemverErrorKind].
 #[error("{kind}")]
 pub struct SemverError {
     input: String,
-    span: SourceSpan,
+    #[cfg(feature = "miette")]
+    span: miette::SourceSpan,
     kind: SemverErrorKind,
 }
 
-impl Diagnostic for SemverError {
+#[cfg(feature = "miette")]
+impl miette::Diagnostic for SemverError {
     fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
         self.kind().code()
     }
@@ -83,7 +84,8 @@ impl SemverError {
     }
 
     /// Returns the SourceSpan of the error.
-    pub fn span(&self) -> &SourceSpan {
+    #[cfg(feature = "miette")]
+    pub fn span(&self) -> &miette::SourceSpan {
         &self.span
     }
 
@@ -135,7 +137,8 @@ impl SemverError {
 /**
 The specific kind of error that occurred. Usually wrapped in a [SemverError].
 */
-#[derive(Debug, Clone, Error, Eq, PartialEq, Diagnostic)]
+#[derive(Debug, Clone, Error, Eq, PartialEq)]
+#[cfg_attr(feature = "miette", derive(miette::Diagnostic))]
 pub enum SemverErrorKind {
     /**
     Semver strings overall can't be longer than [MAX_LENGTH]. This is a
