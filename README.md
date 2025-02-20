@@ -26,3 +26,9 @@ assert!(version.satisfies(&range));
 ## Minimum Suggested Rust Version (MSRV)
 
 You must be 1.70.0 or taller to get on this ride.
+
+## Features
+
+By default, the crate uses [`miette`](https://docs.rs/miette) when errors are printed on the terminal.
+
+If you don't require this feature, you can set `default-features = false` in your `Cargo.toml`.
